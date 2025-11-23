@@ -6,12 +6,12 @@ WHEEL_DIAMETER = 5.6    # wheel diameter in CM
 MOTOR_INVERT = -1       # change to -1 or 1 for value if motors run reverse from expected
 MAX_SPEED = 1050        # max speed of drive motors (small = 660; medium = 1110; large = 1050)
 
-# ROBOT SPECIFIC PARAMETERS 
-# define drive motors and PAIR_1
-LEFT_DRIVE = port.C
-RIGHT_DRIVE = port.A
-LEFT_ATTACH = port.B
-RIGHT_ATTACH = port.F
+# Initialize which motors are on which ports
+LEFT_DRIVE = port.A     # port of left drive motor
+RIGHT_DRIVE = port.B    # port of right drive motor
+LEFT_ATTACH = port.C    # port of the left attachment motor
+RIGHT_ATTACH = port.D   # port of the right attachment motor
+COLOR_SENSOR = port.E   # port of the color sensor
 
 motor_pair.pair(motor_pair.PAIR_1, LEFT_DRIVE, RIGHT_DRIVE)
 DRIVE_PAIR = motor_pair.PAIR_1
