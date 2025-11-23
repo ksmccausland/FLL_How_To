@@ -1,0 +1,141 @@
+from hub import port, motion_sensor, sound
+import runloop, motor_pair, motor
+
+# ROBOT SPECIFIC PARAMETERS
+WHEEL_DIAMETER = 5.6    # wheel diameter in CM
+MOTOR_INVERT = -1       # change to -1 or 1 for value if motors run reverse from expected
+MAX_SPEED = 1050        # max speed of drive motors (small = 660; medium = 1110; large = 1050)
+
+# Initialize which motors are on which ports
+LEFT_DRIVE = port.A     # port of left drive motor
+RIGHT_DRIVE = port.B    # port of right drive motor
+LEFT_ATTACH = port.C    # port of the left attachment motor
+RIGHT_ATTACH = port.D   # port of the right attachment motor
+COLOR_SENSOR = port.E   # port of the color sensor
+
+# create and store the drive motor pair
+motor_pair.pair(motor_pair.PAIR_1, LEFT_DRIVE, RIGHT_DRIVE)
+DRIVE_PAIR = motor_pair.PAIR_1
+
+# Drive straight function.  Note distance is in centimeters.
+async def drive_straight(distance_cm, speed=500, *, beep=True, accel=0.25, decel=0.25, end=motor.HOLD):
+    # direction/sign
+    direction = -1 if distance >= 0 else 1
+    max_speed = abs(int(speed))
+
+    # convert cm -> wheel degrees
+    target_degrees = abs(distance) * 360 / (WHEEL_DIAMETER * 3.14)
+    accel_dist = target_degrees * max(0.0, min(0.9, accel))
+    decel_dist = target_degrees * max(0.0, min(0.9, decel))
+
+    # reset motor encoders & gyro yaw
+    motor.reset_relative_position(LEFT_DRIVE, 0)
+    motor.reset_relative_position(RIGHT_DRIVE, 0)
+    motion_sensor.reset_yaw(0)
+
+    # function to calculate how far the robot has travelled based on left and right motor encoders
+    # returns the true progress robot has made
+    def progress_deg():
+        a = abs(motor.relative_position(LEFT_DRIVE))
+        b = abs(motor.relative_position(RIGHT_DRIVE))
+        return (a + b) / 2
+
+    avg_deg = progress_deg()
+
+    # give robot some initial speed to overcome static friction; otherwise initial speed is 0 from acceleration ramp
+    # 12% of max or 80 deg/s, whichever is higher
+    v_min = max(80, int(0.12 * max_speed))
+
+    # loop that drives until target distance is achieved
+    # roobt will use a trapezoid shaped acceleration curve to accelerate and decelerate at the start and end
+    while avg_deg < target_degrees:
+        # calculate heading correction amount from gyro yaw
+        error = motion_sensor.tilt_angles()[0]
+        correction = int(error * -2)
+
+        remaining = max(0.0, target_degrees - avg_deg)
+
+        # trapezoid acceleration profile calculation
+        accel_factor = 1.0 if accel_dist <= 1e-6 else (avg_deg / accel_dist)
+        decel_factor = 1.0 if decel_dist <= 1e-6 else (remaining / decel_dist)
+        shape = min(1.0, accel_factor, decel_factor)
+
+        # target speed with floor (v_min)
+        target_speed = int(v_min + (max_speed - v_min) * shape)
+
+        # correct drive direction (forward/backward) as necessary
+        cmd = target_speed * direction * MOTOR_INVERT
+
+        # drive the robot
+        motor_pair.move_tank(DRIVE_PAIR, cmd - correction, cmd + correction)
+
+        # update progress
+        avg_deg = progress_deg()
+
+    # stop driving after distance has been travelled
+    motor_pair.stop(DRIVE_PAIR, stop=end)
+
+    # optional beep to signify function has completed
+    if beep:
+        sound.beep(500)
+
+# Turn robot by amount target_angle in degrees via a PID (proportional, integral, derivative).  You WILL need to adjust kp, ki, and kd for different robots
+# based on your wheel choice, robot's weight, attachments, etc.  max_speed and acceleration will limit robot drive parameters.
+async def pid_turn(target_angle, *, max_speed=1000, acceleration=500, kp=.7, ki=0, kd=10, accuracy=5, beep=True, troubleshoot=False):
+    # convert target angle to decidegrees
+    target_angle = target_angle*10
+
+    # Reset yaw to 0 before starting
+    motion_sensor.reset_yaw(0)
+
+    integral = 0
+    last_error = 0
+
+    while True:
+        # Current yaw angle
+        current_angle = motion_sensor.tilt_angles()[0]# yaw in degrees
+        error = target_angle - current_angle
+
+        # Wrap error into [-1800, 1800]
+        if error > 1800:
+            error -= 3600
+        elif error < -1800:
+            error += 3600
+        return error
+
+        # Exit loop when robot angle is within accuracy
+        if abs(error) < accuracy:
+            break
+
+        # PID correction calculation
+        integral = integral + error
+        derivative = error - last_error
+        correction = kp * error + ki * integral + kd * derivative
+        last_error = error
+
+        # Clamp correction to max_speed
+        correction = max(-max_speed, min(max_speed, correction))
+
+        # Perform tank turn based on corrected speed
+        motor_pair.move_tank(DRIVE_PAIR, -int(correction), int(correction), acceleration=acceleration, stop=motor.HOLD)
+
+        # Print angle changing angle values to help troubleshoot
+        if(troubleshoot == True):
+            print(str(int(current_angle)) + " | " + str(int(target_angle)) + " | " + str(int(correction)))
+
+        await runloop.sleep_ms(10)
+
+    # Stop motors when loop is done
+    motor_pair.stop(DRIVE_PAIR, stop=motor.HOLD)
+
+    # beep when function completes
+    if(beep == True):
+        sound.beep(1000)
+
+async def main():
+    await drive_straight(50, 500)
+    await pid_turn(180)
+    await drive_straight(50, 500)
+    await pid_turn(180)
+
+runloop.run(main())
