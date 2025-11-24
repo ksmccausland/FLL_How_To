@@ -1,35 +1,48 @@
 from hub import port, motion_sensor
 import runloop, motor_pair, motor
 
+# CHANGE THESE VALUES BASED ON YOUR ROBOT DESIGN
 WHEEL_DIAMETER = 5.6    # wheel diameter in CM
+INVERT = -1             # change value to 1 or -1 if positive values in drive_straight don't move forward
+RIGHT_DRIVE = port.A    # port on Hub of right drive motor
+LEFT_DRIVE = port.B     # port on Hub of left drive motor
 
-async def main(distance, speed):
-    motor_pair.pair(motor_pair.PAIR_1, port.A, port.B)
+DRIVE_PAIR = motor_pair.PAIR_1
+motor_pair.pair(DRIVE_PAIR, LEFT_DRIVE, RIGHT_DRIVE)
+
+async def drive_straight(distance, speed):
     average_deg = 0
     direction = distance/abs(distance)
-    robo_speed = int(speed * direction * -1)
+    robo_speed = int(speed * direction * INVERT)
 
     # calculate degrees to rotate
     target_degrees = abs(distance) * 360 / (WHEEL_DIAMETER * 3.14)
 
-    # reset motors and yaw
+    # reset motor positions and yaw
     motor.reset_relative_position(port.A, 0)
     motor.reset_relative_position(port.B, 0)
     motion_sensor.reset_yaw(0)
 
-    # wait until robot motion is stable
-    await runloop.until(motion_sensor.stable)
-
     # drive until target distance has been achieved
     while average_deg < target_degrees:
+        # get yaw input to use as arrow
         error = motion_sensor.tilt_angles()[0]
+
+        # scale error to increase affect on drive
         correction = int(error*-2)
-        print(str(average_deg) + " : " + str(target_degrees) + " : " + str(motor.relative_position(port.A)) + " : " + str(motor.relative_position(port.B)) + " : " + str(correction) + " : " + str(robo_speed))
-        
-        motor_pair.move_tank(motor_pair.PAIR_1, robo_speed - correction, robo_speed + correction)
 
-        average_deg = abs((motor.relative_position(port.A)-motor.relative_position(port.B))/2)
+        # print to console for troubleshooting
+        print(str(average_deg) + " : " + str(target_degrees) + " : " + str(motor.relative_position(LEFT_DRIVE)) + " : " + str(motor.relative_position(RIGHT_DRIVE)) + " : " + str(correction) + " : " + str(robo_speed))
 
-    motor_pair.stop(motor_pair.PAIR_1)
+        # drive the robot and apply correction to speed as needed
+        motor_pair.move_tank(DRIVE_PAIR, robo_speed - correction, robo_speed + correction)
 
-runloop.run(main(60, 300))
+        # track distance from left and right drive motors and average to find actual distance travelled
+        average_deg = abs((motor.relative_position(LEFT_DRIVE)-motor.relative_position(RIGHT_DRIVE))/2)
+
+    motor_pair.stop(DRIVE_PAIR, stop=motor.HOLD)
+
+def main():
+    await drive_straight(30, 400)
+
+runloop.run(main())
