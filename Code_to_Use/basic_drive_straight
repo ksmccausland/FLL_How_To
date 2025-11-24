@@ -1,6 +1,5 @@
 from hub import port, motion_sensor
-import runloop, motor_pair
-import motor
+import runloop, motor_pair, motor
 
 WHEEL_DIAMETER = 5.6    # wheel diameter in CM
 
