@@ -1,6 +1,0 @@
-from hub import light_matrix
-
-def hello(name):
-    light_matrix.write("Hello, " + name + "!")
-
-hello("World")
