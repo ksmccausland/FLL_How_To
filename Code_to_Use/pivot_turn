@@ -1,0 +1,59 @@
+# Turn the robot by a given number of degrees using only one wheel.
+# angle_deg > 0 = turn one direction
+# angle_deg < 0 = turn the opposite direction
+# drive_wheel    = "left" or "right"
+async def pivot_turn(
+        angle_deg,
+        drive_wheel="l",
+        *,
+        speed=300,
+        accuracy=2,
+        beep=True,
+        timeout=5000    # <-- new parameter in ms (0 = no timeout)
+    ):
+
+    # If no turn requested, just exit
+    if angle_deg == 0:
+        return
+
+    # Choose which motor port to use
+    if drive_wheel.lower() == "l":
+        motor_port = LEFT_DRIVE
+    else:
+        motor_port = RIGHT_DRIVE
+
+    # Reset yaw to 0 so we measure turn from here
+    motion_sensor.reset_yaw(0)
+
+    target_deg = angle_deg
+    direction = 1 if target_deg > 0 else -1
+
+    # Start the chosen wheel turning
+    motor.run(motor_port, speed * direction)
+
+    # Track starting time
+    start_ms = time.ticks_ms()
+
+    while True:
+
+        # ---- TIMEOUT CHECK ----
+        if timeout > 0:
+            if time.ticks_diff(time.ticks_ms(), start_ms) >= timeout:
+                # Timeout reached — exit loop
+                break
+
+        # SPIKE 3 motion_sensor.tilt_angles()[0] returns decidegrees → convert to degrees
+        current_deg = motion_sensor.tilt_angles()[0] / 10
+        error = target_deg - current_deg
+
+        # Stop when within the desired accuracy
+        if abs(error) <= accuracy:
+            break
+
+        await runloop.sleep_ms(10)
+
+    # Stop the turning wheel
+    motor.stop(motor_port, stop=motor.SMART_BRAKE)
+
+    if beep:
+        sound.beep(2000)
