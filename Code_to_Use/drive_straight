@@ -17,45 +17,49 @@ COLOR_SENSOR = port.E   # port of the color sensor
 motor_pair.pair(motor_pair.PAIR_1, LEFT_DRIVE, RIGHT_DRIVE)
 DRIVE_PAIR = motor_pair.PAIR_1
 
-# Drive straight function.  Note distance is in centimeters.
-async def drive_straight(distance_cm, speed=500, *, beep=True, accel=0.25, decel=0.25, end=motor.HOLD):
+# distance (cm), speed (deg/s). Positive distance = forward.
+# accel/decel are distances (as a fraction of total) over which to ramp.
+async def drive_straight(distance, speed, *, beep=True, accel=0.25, decel=0.25, end=motor.HOLD, reset=True):
+    # pause for 0.3sec before running
+    runloop.sleep_ms(300)
+
     # direction/sign
     direction = -1 if distance >= 0 else 1
     max_speed = abs(int(speed))
 
     # convert cm -> wheel degrees
     target_degrees = abs(distance) * 360 / (WHEEL_DIAMETER * 3.14)
-    accel_dist = target_degrees * max(0.0, min(0.9, accel))
+    accel_dist = target_degrees * max(0.0, min(0.9, accel))# clamp 0..0.9
     decel_dist = target_degrees * max(0.0, min(0.9, decel))
 
-    # reset motor encoders & gyro yaw
+    # encoder & yaw reset
     motor.reset_relative_position(LEFT_DRIVE, 0)
     motor.reset_relative_position(RIGHT_DRIVE, 0)
-    motion_sensor.reset_yaw(0)
 
-    # function to calculate how far the robot has travelled based on left and right motor encoders
-    # returns the true progress robot has made
+    if reset == True:
+        motion_sensor.reset_yaw(0)
+
+    # wait until robot motion is stable (optional)
+    # await runloop.until(motion_sensor.stable)
+
     def progress_deg():
         a = abs(motor.relative_position(LEFT_DRIVE))
         b = abs(motor.relative_position(RIGHT_DRIVE))
-        return (a + b) / 2
+        return (a + b) / 2# <-- true average progress
 
     avg_deg = progress_deg()
 
-    # give robot some initial speed to overcome static friction; otherwise initial speed is 0 from acceleration ramp
-    # 12% of max or 80 deg/s, whichever is higher
-    v_min = max(80, int(0.12 * max_speed))
+    # give it some initial nudge to overcome static friction
+    v_min = max(80, int(0.12 * max_speed))# 12% of max or 80 deg/s, whichever is higher
 
-    # loop that drives until target distance is achieved
-    # roobt will use a trapezoid shaped acceleration curve to accelerate and decelerate at the start and end
     while avg_deg < target_degrees:
-        # calculate heading correction amount from gyro yaw
+        # heading correction from gyro (yaw)
         error = motion_sensor.tilt_angles()[0]
         correction = int(error * -2)
 
         remaining = max(0.0, target_degrees - avg_deg)
 
-        # trapezoid acceleration profile calculation
+        # trapezoid profile factor in [0..1]
         accel_factor = 1.0 if accel_dist <= 1e-6 else (avg_deg / accel_dist)
         decel_factor = 1.0 if decel_dist <= 1e-6 else (remaining / decel_dist)
         shape = min(1.0, accel_factor, decel_factor)
@@ -63,19 +67,17 @@ async def drive_straight(distance_cm, speed=500, *, beep=True, accel=0.25, decel
         # target speed with floor (v_min)
         target_speed = int(v_min + (max_speed - v_min) * shape)
 
-        # correct drive direction (forward/backward) as necessary
-        cmd = target_speed * direction * MOTOR_INVERT
+        # apply direction (Spike Prime uses positive=one direction; your code used -*)
+        # Keep your sign convention: multiply by direction and -1 as before.
+        cmd = target_speed * direction * -1
 
-        # drive the robot
         motor_pair.move_tank(DRIVE_PAIR, cmd - correction, cmd + correction)
 
         # update progress
         avg_deg = progress_deg()
 
-    # stop driving after distance has been travelled
     motor_pair.stop(DRIVE_PAIR, stop=end)
 
-    # optional beep to signify function has completed
     if beep:
         sound.beep(500)
 
