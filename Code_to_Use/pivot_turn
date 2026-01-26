@@ -22,13 +22,13 @@ DRIVE_PAIR = motor_pair.PAIR_1
 # angle_deg < 0 = turn the opposite direction
 # drive_wheel    = "left" or "right"
 async def pivot_turn(
-        angle_deg,
-        drive_wheel="l",
+        angle_deg,              # angle to turn in degrees
+        drive_wheel="l",        # which wheel to drive ('l' or 'r'
         *,
-        speed=300,
-        accuracy=2,
-        beep=True,
-        timeout=5000    # <-- new parameter in ms (0 = no timeout)
+        speed=200,              # speed to turn at
+        accuracy=2,             # angle accuracy in degrees
+        beep=True,              # to beep at end of function (True or False)
+        timeout=3000            # time to end function after in milliseconds
     ):
 
     # If no turn requested, just exit
@@ -76,3 +76,8 @@ async def pivot_turn(
 
     if beep:
         sound.beep(2000)
+
+async def main():
+    runloop.run(pivot_turn(90))
+
+runloop.run(main())
